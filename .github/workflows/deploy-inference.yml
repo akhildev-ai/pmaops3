@@ -1,0 +1,91 @@
+name: deploy-inference
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - inference-service/**
+      - .github/workflows/deploy-inference.yml
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+  ECS_TASK_DEFINITION: inference-service/deploy/ecs-task-definition.json
+  CONTAINER_NAME: inference-api
+  MODEL_ARTIFACT_S3_URI: ${{ vars.MODEL_ARTIFACT_S3_URI }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        run: |
+          test -n "${{ vars.AWS_REGION }}"
+          test -n "${{ vars.ECR_REPOSITORY }}"
+          test -n "${{ vars.ECS_CLUSTER }}"
+          test -n "${{ vars.ECS_SERVICE }}"
+          test -n "${{ secrets.AWS_ROLE_TO_ASSUME }}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download model artifact from S3
+        if: ${{ env.MODEL_ARTIFACT_S3_URI != '' }}
+        run: |
+          mkdir -p inference-service/artifacts
+          aws s3 cp "${MODEL_ARTIFACT_S3_URI}" inference-service/artifacts/model_package.joblib
+
+      - name: Build, tag, and push image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker build -f inference-service/Dockerfile -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "image=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Render ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Smoke test health endpoint
+        if: ${{ vars.INFERENCE_BASE_URL != '' }}
+        env:
+          INFERENCE_BASE_URL: ${{ vars.INFERENCE_BASE_URL }}
+        run: |
+          curl --fail --show-error "${INFERENCE_BASE_URL}/health"
+          curl --fail --show-error "${INFERENCE_BASE_URL}/version"
+

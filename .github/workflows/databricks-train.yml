@@ -1,0 +1,52 @@
+name: databricks-train
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - upload-telemetry
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+env:
+  DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+  DATABRICKS_JOB_ID: ${{ vars.DATABRICKS_JOB_ID }}
+  RAW_DATA_BUCKET: ${{ vars.RAW_DATA_BUCKET }}
+  RAW_DATA_PREFIX: ${{ vars.RAW_DATA_PREFIX }}
+  MLFLOW_REGISTER_MODEL_NAME: ${{ vars.MLFLOW_REGISTER_MODEL_NAME }}
+
+jobs:
+  trigger-training:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        run: |
+          test -n "${{ vars.DATABRICKS_HOST }}"
+          test -n "${{ vars.DATABRICKS_JOB_ID }}"
+          test -n "${{ secrets.DATABRICKS_TOKEN }}"
+          test -n "${{ vars.RAW_DATA_BUCKET }}"
+          test -n "${{ vars.RAW_DATA_PREFIX }}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Trigger Databricks training job
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          python databricks/trigger_job.py \
+            --host "${DATABRICKS_HOST}" \
+            --job-id "${DATABRICKS_JOB_ID}" \
+            --timeout-seconds 5400 \
+            --param raw_data_uri="s3://${RAW_DATA_BUCKET}/${RAW_DATA_PREFIX}/" \
+            --param register_model_name="${MLFLOW_REGISTER_MODEL_NAME}"

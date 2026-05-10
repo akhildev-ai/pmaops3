@@ -1,0 +1,42 @@
+{
+  "family": "industrial-ai-inference-dev",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "REPLACE_WITH_EXECUTION_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "inference-api",
+      "image": "REPLACE_WITH_IMAGE_URI",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "MODEL_ARTIFACT_PATH",
+          "value": "/app/artifacts/model_package.joblib"
+        },
+        {
+          "name": "PORT",
+          "value": "8000"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/industrial-ai-inference-dev",
+          "awslogs-region": "REPLACE_WITH_AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+name: upload-telemetry
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  RAW_DATA_BUCKET: ${{ vars.RAW_DATA_BUCKET }}
+  RAW_DATA_PREFIX: ${{ vars.RAW_DATA_PREFIX }}
+
+jobs:
+  generate-and-upload:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        run: |
+          test -n "${{ vars.AWS_REGION }}"
+          test -n "${{ vars.RAW_DATA_BUCKET }}"
+          test -n "${{ vars.RAW_DATA_PREFIX }}"
+          test -n "${{ secrets.AWS_ROLE_TO_ASSUME }}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate partitioned telemetry dataset
+        run: |
+          python sensor-simulator/generate_partitioned_data.py \
+            --machines 12 \
+            --days 7 \
+            --frequency-minutes 30 \
+            --failure-probability 0.02 \
+            --anomaly-probability 0.06 \
+            --output-dir artifacts/raw
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Upload raw dataset to S3
+        run: |
+          aws s3 sync artifacts/raw "s3://${RAW_DATA_BUCKET}/${RAW_DATA_PREFIX}/" --delete

@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+dist/
+build/
+node_modules/
+coverage/
+.env
+artifacts/
+output/
+inference-service/artifacts/*.joblib
+inference-service/artifacts/*.json
