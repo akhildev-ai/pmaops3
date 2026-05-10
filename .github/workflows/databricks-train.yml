@@ -17,6 +17,7 @@ env:
   RAW_DATA_BUCKET: ${{ vars.RAW_DATA_BUCKET }}
   RAW_DATA_PREFIX: ${{ vars.RAW_DATA_PREFIX }}
   MLFLOW_REGISTER_MODEL_NAME: ${{ vars.MLFLOW_REGISTER_MODEL_NAME }}
+  MODEL_ARTIFACT_S3_URI: ${{ vars.MODEL_ARTIFACT_S3_URI }}
 
 jobs:
   trigger-training:
@@ -34,6 +35,7 @@ jobs:
           test -n "${{ secrets.DATABRICKS_TOKEN }}"
           test -n "${{ vars.RAW_DATA_BUCKET }}"
           test -n "${{ vars.RAW_DATA_PREFIX }}"
+          test -n "${{ vars.MODEL_ARTIFACT_S3_URI }}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,4 +51,6 @@ jobs:
             --job-id "${DATABRICKS_JOB_ID}" \
             --timeout-seconds 5400 \
             --param raw_data_uri="s3://${RAW_DATA_BUCKET}/${RAW_DATA_PREFIX}/" \
-            --param register_model_name="${MLFLOW_REGISTER_MODEL_NAME}"
+            --param register_model_name="${MLFLOW_REGISTER_MODEL_NAME}" \
+            --param model_export_uri="${MODEL_ARTIFACT_S3_URI}"
+

@@ -54,6 +54,7 @@ This file is the fastest setup reference for running the repository entirely thr
 ## Databricks resources to create
 
 - Workspace folder: `/Shared/industrial-ai-platform`
+- Notebook path: `/Shared/industrial-ai-platform/notebooks/train_and_export`
 - Experiment: `/Shared/industrial-ai-platform/experiments/dev`
 - Job: `industrial-ai-train-dev`
 - Registered model: `industrial_predictive_maintenance_model`
@@ -81,5 +82,6 @@ The Databricks job should accept these notebook parameters from GitHub Actions:
 
 - `raw_data_uri`
 - `register_model_name`
+- `model_export_uri`
 
 The job should export the selected model artifact to the S3 object referenced by `MODEL_ARTIFACT_S3_URI` so the ECS deploy workflow can bundle it into the image.
