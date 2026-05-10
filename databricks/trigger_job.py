@@ -38,6 +38,13 @@ def api_request(host: str, path: str, token: str, payload: dict[str, Any] | None
         raise RuntimeError(f"Databricks API call failed for {url}: {exc.code} {message}") from exc
 
 
+def api_get(host: str, path: str, token: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
+    suffix = ""
+    if query:
+        suffix = "?" + parse.urlencode(query)
+    return api_request(host, f"{path}{suffix}", token, payload=None)
+
+
 def notebook_params(raw_params: list[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in raw_params:
@@ -46,6 +53,13 @@ def notebook_params(raw_params: list[str]) -> dict[str, str]:
         key, value = item.split("=", 1)
         result[key] = value
     return result
+
+
+def task_keys_for_job(host: str, job_id: int, token: str) -> list[str]:
+    job_response = api_get(host, "/api/2.2/jobs/get", token, {"job_id": job_id})
+    settings = job_response.get("settings", {})
+    tasks = settings.get("tasks", [])
+    return [task["task_key"] for task in tasks if "task_key" in task]
 
 
 def main() -> None:
@@ -58,6 +72,10 @@ def main() -> None:
     run_payload: dict[str, Any] = {"job_id": args.job_id}
     if params:
         run_payload["job_parameters"] = params
+
+    task_keys = task_keys_for_job(args.host, args.job_id, token)
+    if task_keys:
+        run_payload["only"] = task_keys
 
     response = api_request(args.host, "/api/2.2/jobs/run-now", token, run_payload)
     run_id = response["run_id"]
