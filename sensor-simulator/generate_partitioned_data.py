@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import shutil
 import sys
 
 import pandas as pd
@@ -50,9 +51,22 @@ def main() -> None:
     dataframe["month"] = dataframe["timestamp"].dt.strftime("%m")
     dataframe["day"] = dataframe["timestamp"].dt.strftime("%d")
 
+    if args.output_dir.exists():
+        shutil.rmtree(args.output_dir)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    dataframe.to_parquet(args.output_dir, index=False, partition_cols=["year", "month", "day"])
-    print(f"Wrote {len(dataframe)} telemetry rows into partitioned dataset at {args.output_dir}")
+
+    partition_count = 0
+    for (year, month, day), partition_df in dataframe.groupby(["year", "month", "day"], sort=True):
+        partition_dir = args.output_dir / f"year={year}" / f"month={month}" / f"day={day}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        partition_path = partition_dir / "telemetry.parquet"
+        payload_df = partition_df.drop(columns=["year", "month", "day"])
+        payload_df.to_parquet(partition_path, index=False)
+        partition_count += 1
+
+    print(
+        f"Wrote {len(dataframe)} telemetry rows into {partition_count} partitions at {args.output_dir}"
+    )
 
 
 if __name__ == "__main__":
