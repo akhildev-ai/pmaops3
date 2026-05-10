@@ -57,9 +57,9 @@ def main() -> None:
     params = notebook_params(args.param)
     run_payload: dict[str, Any] = {"job_id": args.job_id}
     if params:
-        run_payload["notebook_params"] = params
+        run_payload["job_parameters"] = params
 
-    response = api_request(args.host, "/api/2.1/jobs/run-now", token, run_payload)
+    response = api_request(args.host, "/api/2.2/jobs/run-now", token, run_payload)
     run_id = response["run_id"]
     print(f"Triggered Databricks job {args.job_id} with run_id {run_id}")
 
