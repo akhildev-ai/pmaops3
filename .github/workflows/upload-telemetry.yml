@@ -6,7 +6,6 @@ on:
     - cron: "0 2 * * *"
 
 permissions:
-  id-token: write
   contents: read
 
 env:
@@ -27,7 +26,8 @@ jobs:
           test -n "${{ vars.AWS_REGION }}"
           test -n "${{ vars.RAW_DATA_BUCKET }}"
           test -n "${{ vars.RAW_DATA_PREFIX }}"
-          test -n "${{ secrets.AWS_ROLE_TO_ASSUME }}"
+          test -n "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          test -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -53,10 +53,9 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Upload raw dataset to S3
         run: |
           aws s3 sync artifacts/raw "s3://${RAW_DATA_BUCKET}/${RAW_DATA_PREFIX}/" --delete
-
-###
