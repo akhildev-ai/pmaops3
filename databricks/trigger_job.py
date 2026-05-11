@@ -25,6 +25,14 @@ SINGLE_TASK_FIELDS = {
 }
 
 
+class DatabricksApiError(RuntimeError):
+    def __init__(self, url: str, code: int, message: str) -> None:
+        super().__init__(f"Databricks API call failed for {url}: {code} {message}")
+        self.url = url
+        self.code = code
+        self.message = message
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Trigger and wait for a Databricks job run.")
     parser.add_argument("--host", required=True, help="Databricks workspace host, for example https://dbc-xxxx.cloud.databricks.com")
@@ -51,7 +59,7 @@ def api_request(host: str, path: str, token: str, payload: dict[str, Any] | None
             return json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         message = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Databricks API call failed for {url}: {exc.code} {message}") from exc
+        raise DatabricksApiError(url, exc.code, message) from exc
 
 
 def api_get(host: str, path: str, token: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -75,9 +83,11 @@ def get_job_details(host: str, job_id: int, token: str) -> dict[str, Any]:
     return api_get(host, "/api/2.2/jobs/get", token, {"job_id": job_id})
 
 
-def build_run_request(job_id: int, job_details: dict[str, Any], params: dict[str, str]) -> tuple[str, dict[str, Any]]:
+def build_run_requests(job_id: int, job_details: dict[str, Any], params: dict[str, str]) -> list[tuple[str, dict[str, Any], str]]:
     settings = job_details.get("settings", {})
     tasks = settings.get("tasks") or job_details.get("tasks") or []
+    requests_to_try: list[tuple[str, dict[str, Any], str]] = []
+
     if tasks:
         payload: dict[str, Any] = {"job_id": job_id}
         if params:
@@ -85,7 +95,7 @@ def build_run_request(job_id: int, job_details: dict[str, Any], params: dict[str
         task_keys = [task["task_key"] for task in tasks if "task_key" in task]
         if task_keys:
             payload["only"] = task_keys
-        return "/api/2.2/jobs/run-now", payload
+        requests_to_try.append(("/api/2.2/jobs/run-now", payload, "Jobs API 2.2 with discovered task keys"))
 
     single_task_field = next(
         (
@@ -99,19 +109,67 @@ def build_run_request(job_id: int, job_details: dict[str, Any], params: dict[str
         payload = {"job_id": job_id}
         if params:
             payload["notebook_params"] = params
-        return "/api/2.1/jobs/run-now", payload
-
-    if single_task_field:
+        requests_to_try.append(("/api/2.1/jobs/run-now", payload, "Jobs API 2.1 with notebook_params"))
+    elif single_task_field:
         payload = {"job_id": job_id}
         if params:
             payload["job_parameters"] = params
-        return "/api/2.2/jobs/run-now", payload
+        requests_to_try.append(("/api/2.2/jobs/run-now", payload, f"Jobs API 2.2 for detected {single_task_field}"))
+
+    generic_payload: dict[str, Any] = {"job_id": job_id}
+    if params:
+        generic_payload["job_parameters"] = params
+    requests_to_try.append(("/api/2.2/jobs/run-now", generic_payload, "Jobs API 2.2 generic run-now"))
+
+    if params:
+        requests_to_try.append(
+            (
+                "/api/2.1/jobs/run-now",
+                {"job_id": job_id, "notebook_params": params},
+                "Jobs API 2.1 notebook fallback",
+            )
+        )
+
+    requests_to_try.append(("/api/2.1/jobs/run-now", {"job_id": job_id}, "Jobs API 2.1 bare run-now"))
+
+    deduplicated: list[tuple[str, dict[str, Any], str]] = []
+    seen: set[tuple[str, str]] = set()
+    for path, payload, description in requests_to_try:
+        key = (path, json.dumps(payload, sort_keys=True))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append((path, payload, description))
+
+    return deduplicated
+
+
+def trigger_run(
+    host: str,
+    token: str,
+    job_id: int,
+    job_details: dict[str, Any],
+    params: dict[str, str],
+) -> dict[str, Any]:
+    settings = job_details.get("settings", {})
+    attempts = build_run_requests(job_id, job_details, params)
+    failures: list[str] = []
+
+    for path, payload, description in attempts:
+        try:
+            print(f"Trigger attempt: {description}")
+            return api_request(host, path, token, payload)
+        except DatabricksApiError as exc:
+            failures.append(f"{description}: {exc.code} {exc.message}")
+            if exc.code not in {400, 404}:
+                raise
 
     settings_keys = ", ".join(sorted(settings.keys())) or "<none>"
     root_keys = ", ".join(sorted(job_details.keys())) or "<none>"
     raise RuntimeError(
-        "Unsupported Databricks job format: expected tasks or a supported single-task definition in jobs/get response. "
-        f"settings keys: {settings_keys}. response keys: {root_keys}."
+        "Unable to trigger Databricks job after trying supported run-now variants. "
+        f"settings keys: {settings_keys}. response keys: {root_keys}. "
+        f"Attempts: {' | '.join(failures)}"
     )
 
 
@@ -123,9 +181,7 @@ def main() -> None:
 
     params = notebook_params(args.param)
     job_details = get_job_details(args.host, args.job_id, token)
-    run_path, run_payload = build_run_request(args.job_id, job_details, params)
-
-    response = api_request(args.host, run_path, token, run_payload)
+    response = trigger_run(args.host, token, args.job_id, job_details, params)
     run_id = response["run_id"]
     print(f"Triggered Databricks job {args.job_id} with run_id {run_id}")
 
