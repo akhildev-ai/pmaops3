@@ -55,11 +55,31 @@ def notebook_params(raw_params: list[str]) -> dict[str, str]:
     return result
 
 
-def task_keys_for_job(host: str, job_id: int, token: str) -> list[str]:
+def get_job_settings(host: str, job_id: int, token: str) -> dict[str, Any]:
     job_response = api_get(host, "/api/2.2/jobs/get", token, {"job_id": job_id})
-    settings = job_response.get("settings", {})
+    return job_response.get("settings", {})
+
+
+def build_run_request(job_id: int, settings: dict[str, Any], params: dict[str, str]) -> tuple[str, dict[str, Any]]:
     tasks = settings.get("tasks", [])
-    return [task["task_key"] for task in tasks if "task_key" in task]
+    if tasks:
+        payload: dict[str, Any] = {"job_id": job_id}
+        if params:
+            payload["job_parameters"] = params
+        task_keys = [task["task_key"] for task in tasks if "task_key" in task]
+        if task_keys:
+            payload["only"] = task_keys
+        return "/api/2.2/jobs/run-now", payload
+
+    if "notebook_task" in settings:
+        payload = {"job_id": job_id}
+        if params:
+            payload["notebook_params"] = params
+        return "/api/2.1/jobs/run-now", payload
+
+    raise RuntimeError(
+        "Unsupported Databricks job format: expected settings.tasks or settings.notebook_task in jobs/get response."
+    )
 
 
 def main() -> None:
@@ -69,15 +89,10 @@ def main() -> None:
         raise RuntimeError("DATABRICKS_TOKEN is required.")
 
     params = notebook_params(args.param)
-    run_payload: dict[str, Any] = {"job_id": args.job_id}
-    if params:
-        run_payload["job_parameters"] = params
+    settings = get_job_settings(args.host, args.job_id, token)
+    run_path, run_payload = build_run_request(args.job_id, settings, params)
 
-    task_keys = task_keys_for_job(args.host, args.job_id, token)
-    if task_keys:
-        run_payload["only"] = task_keys
-
-    response = api_request(args.host, "/api/2.2/jobs/run-now", token, run_payload)
+    response = api_request(args.host, run_path, token, run_payload)
     run_id = response["run_id"]
     print(f"Triggered Databricks job {args.job_id} with run_id {run_id}")
 
