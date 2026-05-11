@@ -9,6 +9,22 @@ from typing import Any
 from urllib import error, parse, request
 
 
+SINGLE_TASK_FIELDS = {
+    "notebook_task",
+    "spark_jar_task",
+    "spark_python_task",
+    "spark_submit_task",
+    "python_wheel_task",
+    "pipeline_task",
+    "run_job_task",
+    "dbt_task",
+    "sql_task",
+    "condition_task",
+    "for_each_task",
+    "clean_rooms_notebook_task",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Trigger and wait for a Databricks job run.")
     parser.add_argument("--host", required=True, help="Databricks workspace host, for example https://dbc-xxxx.cloud.databricks.com")
@@ -55,13 +71,13 @@ def notebook_params(raw_params: list[str]) -> dict[str, str]:
     return result
 
 
-def get_job_settings(host: str, job_id: int, token: str) -> dict[str, Any]:
-    job_response = api_get(host, "/api/2.2/jobs/get", token, {"job_id": job_id})
-    return job_response.get("settings", {})
+def get_job_details(host: str, job_id: int, token: str) -> dict[str, Any]:
+    return api_get(host, "/api/2.2/jobs/get", token, {"job_id": job_id})
 
 
-def build_run_request(job_id: int, settings: dict[str, Any], params: dict[str, str]) -> tuple[str, dict[str, Any]]:
-    tasks = settings.get("tasks", [])
+def build_run_request(job_id: int, job_details: dict[str, Any], params: dict[str, str]) -> tuple[str, dict[str, Any]]:
+    settings = job_details.get("settings", {})
+    tasks = settings.get("tasks") or job_details.get("tasks") or []
     if tasks:
         payload: dict[str, Any] = {"job_id": job_id}
         if params:
@@ -71,14 +87,31 @@ def build_run_request(job_id: int, settings: dict[str, Any], params: dict[str, s
             payload["only"] = task_keys
         return "/api/2.2/jobs/run-now", payload
 
-    if "notebook_task" in settings:
+    single_task_field = next(
+        (
+            field
+            for field in SINGLE_TASK_FIELDS
+            if field in settings or field in job_details
+        ),
+        None,
+    )
+    if single_task_field == "notebook_task":
         payload = {"job_id": job_id}
         if params:
             payload["notebook_params"] = params
         return "/api/2.1/jobs/run-now", payload
 
+    if single_task_field:
+        payload = {"job_id": job_id}
+        if params:
+            payload["job_parameters"] = params
+        return "/api/2.2/jobs/run-now", payload
+
+    settings_keys = ", ".join(sorted(settings.keys())) or "<none>"
+    root_keys = ", ".join(sorted(job_details.keys())) or "<none>"
     raise RuntimeError(
-        "Unsupported Databricks job format: expected settings.tasks or settings.notebook_task in jobs/get response."
+        "Unsupported Databricks job format: expected tasks or a supported single-task definition in jobs/get response. "
+        f"settings keys: {settings_keys}. response keys: {root_keys}."
     )
 
 
@@ -89,8 +122,8 @@ def main() -> None:
         raise RuntimeError("DATABRICKS_TOKEN is required.")
 
     params = notebook_params(args.param)
-    settings = get_job_settings(args.host, args.job_id, token)
-    run_path, run_payload = build_run_request(args.job_id, settings, params)
+    job_details = get_job_details(args.host, args.job_id, token)
+    run_path, run_payload = build_run_request(args.job_id, job_details, params)
 
     response = api_request(args.host, run_path, token, run_payload)
     run_id = response["run_id"]
