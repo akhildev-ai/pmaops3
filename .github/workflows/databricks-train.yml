@@ -42,6 +42,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Reset Databricks job from template
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          python databricks/create_or_update_job.py \
+            --host "${DATABRICKS_HOST}" \
+            --job-id "${DATABRICKS_JOB_ID}"
+
       - name: Trigger Databricks training job
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}

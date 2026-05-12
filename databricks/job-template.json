@@ -6,16 +6,7 @@
     {
       "task_key": "train_predictive_maintenance_model",
       "notebook_task": {
-        "notebook_path": "/Shared/industrial-ai-platform/notebooks/train_and_export",
-        "base_parameters": {
-          "raw_data_uri": "s3://industrial-ai-dev-raw-123456789012/predictive-maintenance/raw/",
-          "register_model_name": "industrial_predictive_maintenance_model",
-          "model_export_uri": "s3://industrial-ai-dev-models-123456789012/exported/model_package.joblib",
-          "experiment_path": "/Shared/industrial-ai-platform/experiments/dev",
-          "bronze_output_uri": "s3://industrial-ai-dev-raw-123456789012/delta/bronze",
-          "silver_output_uri": "s3://industrial-ai-dev-raw-123456789012/delta/silver",
-          "gold_output_uri": "s3://industrial-ai-dev-raw-123456789012/delta/gold"
-        }
+        "notebook_path": "/Shared/industrial-ai-platform/notebooks/train_and_export"
       },
       "new_cluster": {
         "spark_version": "15.4.x-scala2.12",
