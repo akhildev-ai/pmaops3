@@ -15,6 +15,7 @@
     {
       "environment_key": "default_python",
       "spec": {
+        "environment_version": "4",
         "dependencies": [
           "mlflow",
           "scikit-learn",
