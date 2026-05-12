@@ -8,14 +8,21 @@
       "notebook_task": {
         "notebook_path": "/Shared/industrial-ai-platform/notebooks/train_and_export"
       },
-      "new_cluster": {
-        "spark_version": "15.4.x-scala2.12",
-        "node_type_id": "i3.xlarge",
-        "driver_node_type_id": "i3.xlarge",
-        "num_workers": 1,
-        "spark_env_vars": {
-          "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
-        }
+      "environment_key": "default_python"
+    }
+  ],
+  "environments": [
+    {
+      "environment_key": "default_python",
+      "spec": {
+        "dependencies": [
+          "mlflow",
+          "scikit-learn",
+          "xgboost",
+          "pandas",
+          "joblib",
+          "boto3"
+        ]
       }
     }
   ]
