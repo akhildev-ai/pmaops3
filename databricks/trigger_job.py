@@ -88,6 +88,14 @@ def build_run_requests(job_id: int, job_details: dict[str, Any], params: dict[st
     tasks = settings.get("tasks") or job_details.get("tasks") or []
     requests_to_try: list[tuple[str, dict[str, Any], str]] = []
 
+    if not tasks and settings.get("format") in {"SINGLE_TASK", "MULTI_TASK"}:
+        settings_keys = ", ".join(sorted(settings.keys())) or "<none>"
+        raise RuntimeError(
+            f"Databricks job {job_id} exists but has no tasks configured. "
+            "Reset or recreate the job from databricks/job-template.json before triggering it. "
+            f"settings keys: {settings_keys}."
+        )
+
     if tasks:
         payload: dict[str, Any] = {"job_id": job_id}
         if params:
